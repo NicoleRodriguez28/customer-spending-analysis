@@ -1,0 +1,267 @@
+---
+title: "Analyzing Customer Spending Behavior"
+author: "Nicole Rodriguez"
+date: "05/17/2025"
+output:
+  pdf_document:
+    toc: true
+  html_document:
+    code_folding: show
+    fig_caption: true
+    df_print: kable
+    theme: lumen
+    toc: true
+    toc_float:
+      collapsed: false
+---
+
+# Introduction
+
+This project explores customer spending behavior using demographic features such as family size, gender, profession, and work experience. By analyzing patterns in average spending scores across different customer groups, this study identifies trends that may reflect financial habits, lifestyle constraints, or evolving spending behavior. 
+
+The analysis was conducted in R using tidyverse and RSQLite, with results presented through summary statistics and visualizations with ggplot2. Key findings highlight that customers with moderate family sizes tend to have the highest spending scores, while those with very small or very large families exhibit more conservative or constrained spending. Similarly, early-career customers show higher spending tendencies, which may suggest less disciplined financial habits.
+
+* * * 
+
+# Data
+## Load Libraries and Packages
+```{r}
+# Load required libraries
+if (!require("DBI"))
+  install.packages("DBI")
+if (!require("RSQLite"))
+  install.packages("RSQLite")
+if (!require("readr"))
+  install.packages("readr")
+if (!require("tidyverse"))
+  install.packages("tidyverse")
+if (!require("ggplot2"))
+  install.packages("ggplot2")
+if (!require("dplyr"))
+  install.packages("dplyr")
+
+library(DBI) # R database interface
+library(RSQLite) # SQLite interface for R
+library(readr) # Read data
+library(tidyverse) # Data packages
+library(ggplot2) # Data visualization
+library(dplyr) # Data manipulation
+```
+
+### Description of data
+The [Kaggle dataset](https://www.kaggle.com/datasets/datascientistanna/customers-dataset) contains demographic and behavioral data for a sample of shoppers. Each row represents a unique customer, with the following variables:
+
+- Customer ID
+
+- Gender
+
+- Age
+
+- Annual Income
+
+- Spending Score - Score assigned by the shop, based on customer behavior and spending nature
+
+- Profession
+
+- Work Experience - in years
+
+- Family Size
+
+## Read Data and Connect to SQLite
+```{r, include=FALSE}
+# Read CSV
+customers <- read_csv("customers.csv")
+
+# Check for missing values
+sum(is.na(customers))
+
+# Remove missing values
+customers <- customers %>%
+  na.omit()
+
+# Connect to SQLite
+con <- dbConnect(SQLite(), "shopper_data.sqlite")
+
+# Load data into SQLite
+dbWriteTable(con, "customers", customers, overwrite = TRUE)
+```
+
+## Preview Data
+```{r, message=FALSE, warning=FALSE}
+# Top ten rows of the data
+head(customers, 10)
+```
+
+* * *
+
+# Data Analysis
+## Chart/Graphs
+```{sql connection=con}
+-- Average income and spending score by profession: descending 
+SELECT profession,
+       ROUND(AVG(`Annual Income ($)`), 2) AS avg_income,
+       ROUND(AVG(`Spending Score (1-100)`), 2) AS avg_score
+FROM customers
+GROUP BY profession
+ORDER BY avg_score DESC;
+```
+
+Customers working in entertainment, the arts, and healthcare (doctors) tend to exhibit higher spending scores, indicating more active or premium shopping behavior. **Executives** report the *highest average income* among all professions, although their average spending score is moderate at 49.90.
+
+```{r}
+# Barplot: Average spending score by profession
+customers %>%
+  group_by(Profession) %>%
+  summarise(avg_spending = mean(`Spending Score (1-100)`), na.rm = TRUE) %>%
+  arrange(desc(avg_spending)) %>%
+  ggplot(aes(x = reorder(Profession, avg_spending), y = avg_spending, fill = avg_spending)) +
+  geom_col() +
+  # Flip for better readability
+  coord_flip() +
+  scale_fill_gradient(low = "skyblue", high = "darkblue") +
+  # Labels
+  labs(title = "Average Spending Score by Profession",
+       x = "Profession",
+       y = "Average Spending Score") +
+  # Theme
+  theme_minimal()
+
+```
+
+
+
+```{sql connection=con}
+-- Gender-based average income and score
+SELECT gender,
+       ROUND(AVG(`Annual Income ($)`), 2) AS avg_income,
+       ROUND(AVG(`Spending Score (1-100)`), 2) AS avg_score
+FROM customers
+GROUP BY gender;
+```
+
+> Male customers earn more on average than female customers, and tend to spend more based on their average spending scores.
+
+```{r}
+# Boxplot: Spending Score by Gender, colored by median score
+customers %>%
+  group_by(Gender) %>%
+  mutate(avg_gender_score = mean(`Spending Score (1-100)`, na.rm = TRUE)) %>%
+  ggplot(aes(x = Gender, y = `Spending Score (1-100)`, fill = avg_gender_score)) +
+  geom_boxplot() +
+  scale_fill_gradient(low = "lightcoral", high = "darkred") +
+  labs(
+    title = "Distribution of Spending Scores by Gender",
+    x = "Gender",
+    y = "Spending Score",
+    fill = "Avg Score"
+  ) +
+  theme_minimal()
+
+```
+
+This boxplot compares the distribution of spending scores between males and females. While both genders have similar medians, the spread of scores is slightly broader for females. Males, despite having a slightly higher median spending score, also exhibit more outliers. The color gradient reflects the average score, with darker red indicating a marginally higher average for males (51.2). This suggests that gender may have only a small influence on spending behavior.
+
+
+```{r}
+# Scatter plot: Income vs Spending Score, color by spending score
+ggplot(customers, aes(x = `Annual Income ($)`, y = `Spending Score (1-100)`, color = `Spending Score (1-100)`)) +
+  geom_point(alpha = 0.7) +
+  scale_color_gradient(low = "lightgreen", high = "darkgreen") +
+  labs(
+    title = "Annual Income vs. Spending Score",
+    x = "Annual Income (USD)",
+    y = "Spending Score",
+    color = "Score"
+  ) +
+  theme_minimal()
+```
+
+This scatter plot reveals *no strong linear relationship* between **income** and **spending score**. Customers across all income levels exhibit a wide range of spending behaviors. Even high-income individuals can have low spending scores and vice versa. The gradient color scale indicates score intensity but reinforces the weak correlation. This suggests that income alone isn't a reliable predictor of spending behavior in this dataset.
+
+
+```{sql connection=con}
+-- Average spending score by age groups
+SELECT 
+  CASE
+    WHEN age < 20 THEN 'Teen'
+    WHEN age BETWEEN 20 AND 35 THEN 'Young Adult'
+    WHEN age BETWEEN 36 AND 55 THEN 'Adult'
+    ELSE 'Senior'
+  END AS age_group,
+  COUNT(*) AS count,
+  ROUND(AVG(`Spending Score (1-100)`), 2) AS avg_score
+FROM customers
+GROUP BY age_group
+ORDER BY avg_score DESC;
+```
+
+**Teens** report having the *highest* average spending score among all age groups. This reflects the lack of financial experience and management they have at this age. Seniors have the lowest average spending score, given they have had more experience with money management. 
+
+`
+```{r}
+# Create age groups
+customers <- customers %>%
+  mutate(AgeGroup = case_when(
+    Age < 25 ~ "Under 25",
+    Age <= 40 ~ "25-40",
+    TRUE ~ "Over 40"
+  ))
+
+# Boxplot: Spending Score by Age Group, colored by group avg
+customers %>%
+  group_by(AgeGroup) %>%
+  mutate(avg_group_score = mean(`Spending Score (1-100)`, na.rm = TRUE)) %>%
+  ggplot(aes(x = AgeGroup, y = `Spending Score (1-100)`, fill = avg_group_score)) +
+  geom_boxplot() +
+  scale_fill_gradient(low = "lightskyblue", high = "darkblue") +
+  labs(
+    title = "Spending Score by Age Group",
+    x = "Age Group",
+    y = "Spending Score",
+    fill = "Avg Score"
+  ) +
+  theme_minimal()
+
+```
+
+This chart shows how spending scores vary across different age groups: Under 25, 25–40, and Over 40. The **“Under 25”** group has the *highest* median spending score and appears darker in color, indicating a slightly higher average. This may reflect higher engagement or impulsive spending among younger customers. The “25–40” and “Over 40” groups show similar score distributions, suggesting age-related spending flattens after early adulthood.
+
+```{sql connection=con}
+-- Work experience vs. average spending score
+SELECT `Work Experience`,
+       COUNT(*) AS num_customers,
+       ROUND(AVG(`Spending Score (1-100)`), 2) AS avg_score
+FROM customers
+GROUP BY `Work Experience`
+ORDER BY avg_score DESC;
+```
+
+Shoppers with **2 to 6** years of work experience tend to have the highest average spending scores, suggesting greater willingness or ability to spend. Meanwhile, those with very little (0–1 years) or longer experience (10+ years) show more *moderate* to *lower* spending behavior. This may reflect life stage financial priorities or lifestyle shifts.
+
+
+```{sql connection=con}
+-- Family size effect on spending
+SELECT `Family Size`,
+       COUNT(*) AS num_customers,
+       ROUND(AVG(`Spending Score (1-100)`), 2) AS avg_score
+FROM customers
+GROUP BY `Family Size`
+ORDER BY avg_score DESC;
+```
+
+Larger families may have more financial constraints, leading to lower spending scores. Spending scores peak at medium family sizes (3–5), possibly because these households balance financial responsibilities with discretionary spending power.
+
+* * *
+
+# Conclusion
+This analysis explored consumer spending behavior using demographic and income-related variables. Key findings include:
+
+- **Profession** plays a notable role in *spending habits*, with individuals in Entertainment, Artistry, and Medicine showing *higher* average spending scores, while Executives earn the highest average incomes.
+
+- **Gender** differences are limited: males tend to earn more and have slightly higher spending score variability compared to females.
+
+- **Age** influences spending patterns, with customers under 25 generally spending more than older age groups.
+
+- **Income** does **not** have a strong correlation with spending score, suggesting that other factors such as lifestyle or preferences may be more influential.
+
+These insights can help businesses better segment their market and tailor strategies for customer engagement.
