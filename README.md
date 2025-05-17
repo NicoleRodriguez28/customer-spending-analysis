@@ -1,4 +1,4 @@
-# Analyzing Customer Spending Behavior Based on Family Size and Work Experience
+# Analyzing Customer Spending Behavior 
 ## Overview
 This project explores customer spending behavior using demographic features such as family size, annual income, work experience, and spending score. By analyzing patterns in average spending scores across different customer groups, the study identifies trends that may reflect financial habits, lifestyle constraints, or evolving spending behavior. The analysis was conducted in R using tidyverse and RSQLite, with results presented through summary statistics and visualizations. Customers with moderate family sizes tend to have the highest spending scores, while those with very small or very large families exhibit more conservative or constrained spending. Similarly, early-career customers show higher spending tendencies, which may suggest less disciplined financial habits.
 
